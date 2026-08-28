@@ -15,33 +15,33 @@ async function loadData() {
     try {
 
         const response = await fetch(
-            GOOGLE_SHEET_URL + "&t=" + Date.now()
+            GOOGLE_SHEET_URL + "&cache=" + Date.now()
         );
 
         if (!response.ok) {
-            throw new Error("Google Sheet loading failed");
+            throw new Error("Google Sheet could not be loaded");
         }
 
         const csv = await response.text();
 
+        console.log("Google Sheet data:");
+        console.log(csv);
+
         const rows = parseCSV(csv);
 
-        console.log("Rows loaded:", rows);
+        console.log("Rows:", rows);
 
         processData(rows);
 
         document.getElementById("lastUpdated").innerText =
-            new Date().toLocaleString();
+            "Updated: " + new Date().toLocaleString();
 
-    }
+    } catch (error) {
 
-    catch (error) {
-
-        console.error(error);
+        console.error("ERROR:", error);
 
         document.getElementById("lastUpdated").innerText =
             "Unable to load data";
-
     }
 }
 
@@ -56,7 +56,7 @@ function parseCSV(text) {
 
     let row = [];
     let value = "";
-    let quotes = false;
+    let insideQuotes = false;
 
     for (let i = 0; i < text.length; i++) {
 
@@ -64,79 +64,108 @@ function parseCSV(text) {
 
         if (char === '"') {
 
-            quotes = !quotes;
+            if (
+                insideQuotes &&
+                text[i + 1] === '"'
+            ) {
 
-        }
+                value += '"';
+                i++;
 
-        else if (char === "," && !quotes) {
+            } else {
+
+                insideQuotes = !insideQuotes;
+            }
+
+        } else if (
+            char === "," &&
+            !insideQuotes
+        ) {
 
             row.push(value.trim());
             value = "";
 
-        }
-
-        else if (
+        } else if (
             (char === "\n" || char === "\r") &&
-            !quotes
+            !insideQuotes
         ) {
 
-            if (value !== "" || row.length > 0) {
+            if (
+                value !== "" ||
+                row.length > 0
+            ) {
 
                 row.push(value.trim());
 
                 rows.push(row);
 
                 row = [];
-
                 value = "";
             }
 
-        }
-
-        else {
+        } else {
 
             value += char;
         }
     }
 
-    if (value !== "" || row.length > 0) {
+
+    if (
+        value !== "" ||
+        row.length > 0
+    ) {
 
         row.push(value.trim());
 
         rows.push(row);
     }
 
+
     return rows;
 }
 
 
 // ===============================
-// NUMBER
+// NUMBER CONVERSION
 // ===============================
 
 function num(value) {
 
-    if (!value) return 0;
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
 
-    return parseFloat(
+        return 0;
+    }
+
+
+    let cleaned =
         String(value)
-            .replace(/,/g, "")
             .replace(/₹/g, "")
+            .replace(/,/g, "")
             .replace(/%/g, "")
-    ) || 0;
+            .trim();
+
+
+    return parseFloat(cleaned) || 0;
 }
 
 
 // ===============================
-// FORMAT
+// MONEY FORMAT
 // ===============================
 
 function money(value) {
 
     return "₹" +
-        Number(value).toLocaleString("en-IN", {
-            maximumFractionDigits: 0
-        });
+        Number(value).toLocaleString(
+            "en-IN",
+            {
+                maximumFractionDigits: 0
+            }
+        );
 }
 
 
@@ -146,36 +175,77 @@ function money(value) {
 
 function processData(rows) {
 
-    let headerIndex = -1;
-
-    let totalIndex = -1;
+    console.log("Processing data...");
 
 
-    // Find CATEGORY header
+    if (
+        !rows ||
+        rows.length < 2
+    ) {
 
-    for (let i = 0; i < rows.length; i++) {
-
-        if (
-            String(rows[i][0])
-                .trim()
-                .toUpperCase() === "CATEGORY"
-        ) {
-
-            headerIndex = i;
-
-        }
-    }
-
-
-    if (headerIndex === -1) {
-
-        console.error("CATEGORY header not found");
+        console.error(
+            "No data found in Google Sheet"
+        );
 
         return;
     }
 
 
-    // Find TOTAL row after header
+    // -------------------------------
+    // FIND HEADER
+    // -------------------------------
+
+    let headerIndex = -1;
+
+
+    for (
+        let i = 0;
+        i < rows.length;
+        i++
+    ) {
+
+        const firstCell =
+            String(rows[i][0] || "")
+                .trim()
+                .toUpperCase();
+
+
+        if (
+            firstCell === "CATEGORY"
+        ) {
+
+            headerIndex = i;
+
+            break;
+        }
+    }
+
+
+    // If CATEGORY is not found,
+    // use first row as header
+
+    if (headerIndex === -1) {
+
+        console.warn(
+            "CATEGORY header not found. Using first row."
+        );
+
+        headerIndex = 0;
+    }
+
+
+    console.log(
+        "Header row:",
+        rows[headerIndex]
+    );
+
+
+    // -------------------------------
+    // FIND TOTAL ROW
+    // -------------------------------
+
+    let totalIndex = -1;
+
 
     for (
         let i = headerIndex + 1;
@@ -183,10 +253,14 @@ function processData(rows) {
         i++
     ) {
 
-        if (
-            String(rows[i][0])
+        const firstCell =
+            String(rows[i][0] || "")
                 .trim()
-                .toUpperCase() === "TOTAL"
+                .toUpperCase();
+
+
+        if (
+            firstCell === "TOTAL"
         ) {
 
             totalIndex = i;
@@ -196,11 +270,16 @@ function processData(rows) {
     }
 
 
+    // If TOTAL doesn't exist,
+    // use last row
+
     if (totalIndex === -1) {
 
-        console.error("TOTAL row not found");
+        console.warn(
+            "TOTAL row not found. Using last row."
+        );
 
-        return;
+        totalIndex = rows.length - 1;
     }
 
 
@@ -208,30 +287,70 @@ function processData(rows) {
         rows[totalIndex];
 
 
+    console.log(
+        "TOTAL ROW:",
+        totalRow
+    );
+
+
     // ===============================
-    // TOTAL VALUES
+    // YOUR A-V STRUCTURE
+    // ===============================
+
+    /*
+       A = Category
+       B = Retail Target
+       C = Retail Achievement
+       D = Retail %
+       E = Online Target
+       F = Online Achievement
+       G = Online %
+       H = MBO Target
+       I = MBO Achievement
+       J = MBO %
+       K = KS Target
+       L = KS Achievement
+       M = KS %
+       N = Total Target
+       O = Total Achievement
+       P = Achievement %
+       Q = Variance
+       R = LY
+       S = CY
+       T = Growth %
+       U = Qty
+       V = Avg Billing
+    */
+
+
+    // ===============================
+    // TOTAL
     // ===============================
 
     const totalTarget =
-        num(totalRow[10]);
+        num(totalRow[13]);
 
 
     const totalAchievement =
-        num(totalRow[11]);
+        num(totalRow[14]);
 
 
     const achievementPercent =
         totalTarget === 0
             ? 0
-            : (totalAchievement / totalTarget) * 100;
+            : (
+                totalAchievement /
+                totalTarget
+            ) * 100;
 
 
     const variance =
-        totalAchievement - totalTarget;
+        totalAchievement -
+        totalTarget;
 
 
     // ===============================
-    // KPI
+    // UPDATE KPI
     // ===============================
 
     document.getElementById(
@@ -259,36 +378,61 @@ function processData(rows) {
 
 
     // ===============================
-    // CHANNEL
+    // CHANNEL DATA
     // ===============================
 
     const channels = {
 
         Retail: {
-            target: num(totalRow[1]),
-            achievement: num(totalRow[2])
+
+            target:
+                num(totalRow[1]),
+
+            achievement:
+                num(totalRow[2])
         },
+
 
         Online: {
-            target: num(totalRow[4]),
-            achievement: num(totalRow[5])
+
+            target:
+                num(totalRow[4]),
+
+            achievement:
+                num(totalRow[5])
         },
+
 
         MBO: {
-            target: num(totalRow[6]),
-            achievement: num(totalRow[7])
+
+            target:
+                num(totalRow[7]),
+
+            achievement:
+                num(totalRow[8])
         },
 
+
         KS: {
-            target: num(totalRow[8]),
-            achievement: num(totalRow[9])
+
+            target:
+                num(totalRow[10]),
+
+            achievement:
+                num(totalRow[11])
         }
 
     };
 
 
+    console.log(
+        "Channels:",
+        channels
+    );
+
+
     // ===============================
-    // CATEGORY
+    // CATEGORY DATA
     // ===============================
 
     const categories = [];
@@ -301,45 +445,67 @@ function processData(rows) {
     ) {
 
         const category =
-            String(rows[i][0] || "").trim();
+            String(rows[i][0] || "")
+                .trim();
 
 
-        if (!category) continue;
+        if (!category) {
+            continue;
+        }
 
 
         const target =
-            num(rows[i][10]);
+            num(rows[i][13]);
 
 
         const achievement =
-            num(rows[i][11]);
+            num(rows[i][14]);
 
 
         if (
             target === 0 &&
             achievement === 0
-        ) continue;
+        ) {
+
+            continue;
+        }
 
 
         const percentage =
             target === 0
                 ? 0
-                : (achievement / target) * 100;
+                : (
+                    achievement /
+                    target
+                ) * 100;
 
 
         categories.push({
 
-            category,
-            target,
-            achievement,
-            percentage
+            category:
+                category,
+
+            target:
+                target,
+
+            achievement:
+                achievement,
+
+            percentage:
+                percentage
 
         });
     }
 
 
+    console.log(
+        "Categories:",
+        categories
+    );
+
+
     // ===============================
-    // DRAW
+    // DRAW CHARTS
     // ===============================
 
     drawTargetChart(channels);
@@ -348,12 +514,17 @@ function processData(rows) {
 
     drawCategoryChart(categories);
 
+
+    // ===============================
+    // TABLE
+    // ===============================
+
     updateTable(categories);
 }
 
 
 // ===============================
-// TARGET VS ACHIEVEMENT
+// TARGET VS ACHIEVEMENT CHART
 // ===============================
 
 function drawTargetChart(channels) {
@@ -364,10 +535,18 @@ function drawTargetChart(channels) {
         );
 
 
-    if (!canvas) return;
+    if (!canvas) {
+
+        console.error(
+            "targetAchievementChart not found"
+        );
+
+        return;
+    }
 
 
     if (targetChart) {
+
         targetChart.destroy();
     }
 
@@ -377,48 +556,364 @@ function drawTargetChart(channels) {
 
 
     targetChart =
-        new Chart(canvas, {
+        new Chart(
+            canvas,
+            {
 
-            type: "bar",
+                type: "bar",
 
-            data: {
+                data: {
 
-                labels,
+                    labels: labels,
 
-                datasets: [
+                    datasets: [
 
-                    {
-                        label: "Target",
+                        {
+                            label: "Target",
 
-                        data:
-                            labels.map(
-                                x =>
-                                    channels[x].target
-                            )
-                    },
+                            data:
+                                labels.map(
+                                    channel =>
+                                        channels[
+                                            channel
+                                        ].target
+                                )
+                        },
 
-                    {
-                        label: "Achievement",
+                        {
+                            label:
+                                "Achievement",
 
-                        data:
-                            labels.map(
-                                x =>
-                                    channels[x].achievement
-                            )
+                            data:
+                                labels.map(
+                                    channel =>
+                                        channels[
+                                            channel
+                                        ].achievement
+                                )
+                        }
+
+                    ]
+                },
+
+
+                options: {
+
+                    responsive: true,
+
+                    maintainAspectRatio:
+                        false,
+
+                    scales: {
+
+                        y: {
+
+                            beginAtZero: true,
+
+                            ticks: {
+
+                                callback:
+                                    function(value) {
+
+                                        return money(
+                                            value
+                                        );
+
+                                    }
+                            }
+                        }
                     }
+                }
+            }
+        );
+}
 
-                ]
 
-            },
+// ===============================
+// CHANNEL ACHIEVEMENT %
+// ===============================
 
-            options: {
+function drawChannelChart(channels) {
 
-                responsive: true,
+    const canvas =
+        document.getElementById(
+            "channelAchievementChart"
+        );
 
-                maintainAspectRatio: false,
 
-                scales: {
+    if (!canvas) {
 
-                    y: {
+        console.error(
+            "channelAchievementChart not found"
+        );
 
-                        beginAtZero: true,
+        return;
+    }
+
+
+    if (channelChart) {
+
+        channelChart.destroy();
+    }
+
+
+    const labels =
+        Object.keys(channels);
+
+
+    const percentages =
+        labels.map(
+            channel => {
+
+                const target =
+                    channels[
+                        channel
+                    ].target;
+
+
+                const achievement =
+                    channels[
+                        channel
+                    ].achievement;
+
+
+                if (target === 0) {
+
+                    return 0;
+                }
+
+
+                return (
+                    achievement /
+                    target
+                ) * 100;
+            }
+        );
+
+
+    channelChart =
+        new Chart(
+            canvas,
+            {
+
+                type: "bar",
+
+                data: {
+
+                    labels: labels,
+
+                    datasets: [
+
+                        {
+
+                            label:
+                                "Achievement %",
+
+                            data:
+                                percentages
+                        }
+
+                    ]
+                },
+
+
+                options: {
+
+                    responsive: true,
+
+                    maintainAspectRatio:
+                        false,
+
+                    scales: {
+
+                        y: {
+
+                            beginAtZero: true,
+
+                            ticks: {
+
+                                callback:
+                                    function(value) {
+
+                                        return (
+                                            value +
+                                            "%"
+                                        );
+                                    }
+                            }
+                        }
+                    }
+                }
+            }
+        );
+}
+
+
+// ===============================
+// CATEGORY CHART
+// ===============================
+
+function drawCategoryChart(categories) {
+
+    const canvas =
+        document.getElementById(
+            "categoryChart"
+        );
+
+
+    if (!canvas) {
+
+        console.error(
+            "categoryChart not found"
+        );
+
+        return;
+    }
+
+
+    if (categoryChart) {
+
+        categoryChart.destroy();
+    }
+
+
+    categoryChart =
+        new Chart(
+            canvas,
+            {
+
+                type: "bar",
+
+                data: {
+
+                    labels:
+                        categories.map(
+                            item =>
+                                item.category
+                        ),
+
+                    datasets: [
+
+                        {
+
+                            label:
+                                "Achievement %",
+
+                            data:
+                                categories.map(
+                                    item =>
+                                        item.percentage
+                                )
+                        }
+
+                    ]
+                },
+
+
+                options: {
+
+                    responsive: true,
+
+                    maintainAspectRatio:
+                        false,
+
+                    indexAxis: "y",
+
+                    scales: {
+
+                        x: {
+
+                            beginAtZero: true,
+
+                            ticks: {
+
+                                callback:
+                                    function(value) {
+
+                                        return (
+                                            value +
+                                            "%"
+                                        );
+                                    }
+                            }
+                        }
+                    }
+                }
+            }
+        );
+}
+
+
+// ===============================
+// TABLE
+// ===============================
+
+function updateTable(categories) {
+
+    const table =
+        document.getElementById(
+            "dataTable"
+        );
+
+
+    if (!table) {
+
+        return;
+    }
+
+
+    table.innerHTML = "";
+
+
+    categories.forEach(
+        item => {
+
+            const row =
+                document.createElement(
+                    "tr"
+                );
+
+
+            row.innerHTML = `
+
+                <td>
+                    ${item.category}
+                </td>
+
+                <td>
+                    ${money(item.target)}
+                </td>
+
+                <td>
+                    ${money(item.achievement)}
+                </td>
+
+                <td>
+                    ${item.percentage.toFixed(2)}%
+                </td>
+
+            `;
+
+
+            table.appendChild(row);
+        }
+    );
+}
+
+
+// ===============================
+// START
+// ===============================
+
+loadData();
+
+
+// ===============================
+// AUTO REFRESH
+// EVERY 5 MINUTES
+// ===============================
+
+setInterval(
+    loadData,
+    5 * 60 * 1000
+);
