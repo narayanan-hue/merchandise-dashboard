@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Merchandise Dashboard</title>
+
+    <link rel="stylesheet" href="style.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+
+<div class="dashboard">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+
+        <div class="logo">
+            <div class="logo-icon">M</div>
+            <h2>MERCHANDISE</h2>
+            <p>SALES DASHBOARD</p>
+        </div>
+
+        <div class="menu">
+
+            <div class="menu-item active">
+                📊 Dashboard
+            </div>
+
+            <div class="menu-item">
+                🎯 Target vs Achievement
+            </div>
+
+            <div class="menu-item">
+                👗 Category
+            </div>
+
+            <div class="menu-item">
+                📦 Season
+            </div>
+
+        </div>
+
+        <div class="update-box">
+            <small>Last Updated</small>
+            <div id="lastUpdated">Loading...</div>
+        </div>
+
+    </aside>
+
+
+    <!-- MAIN -->
+    <main class="main">
+
+        <!-- HEADER -->
+
+        <header class="header">
+
+            <div>
+                <h1>Merchandise Dashboard</h1>
+                <p>Target vs Achievement Analysis</p>
+            </div>
+
+            <div class="filters">
+
+                <select id="monthFilter">
+                    <option value="All">All Months</option>
+                </select>
+
+            </div>
+
+        </header>
+
+
+        <!-- KPI CARDS -->
+
+        <section class="kpi-container">
+
+            <div class="kpi-card">
+                <div class="kpi-title">TOTAL TARGET</div>
+                <div class="kpi-value" id="totalTarget">
+                    ₹0
+                </div>
+            </div>
+
+
+            <div class="kpi-card">
+                <div class="kpi-title">TOTAL ACHIEVEMENT</div>
+                <div class="kpi-value" id="totalAchievement">
+                    ₹0
+                </div>
+            </div>
+
+
+            <div class="kpi-card">
+                <div class="kpi-title">ACHIEVEMENT %</div>
+                <div class="kpi-value" id="achievementPercent">
+                    0%
+                </div>
+            </div>
+
+
+            <div class="kpi-card">
+                <div class="kpi-title">VARIANCE</div>
+                <div class="kpi-value" id="variance">
+                    ₹0
+                </div>
+            </div>
+
+        </section>
+
+
+        <!-- CHANNEL -->
+
+        <section class="two-column">
+
+            <div class="chart-card">
+
+                <div class="card-header">
+                    <h3>Target vs Achievement by Channel</h3>
+                </div>
+
+                <div class="chart-area">
+                    <canvas id="channelChart"></canvas>
+                </div>
+
+            </div>
+
+
+            <div class="chart-card">
+
+                <div class="card-header">
+                    <h3>Achievement % by Channel</h3>
+                </div>
+
+                <div class="chart-area">
+                    <canvas id="channelPercentChart"></canvas>
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- CATEGORY -->
+
+        <section class="two-column">
+
+            <div class="chart-card">
+
+                <div class="card-header">
+                    <h3>Target vs Achievement by Category</h3>
+                </div>
+
+                <div class="chart-area">
+                    <canvas id="categoryChart"></canvas>
+                </div>
+
+            </div>
+
+
+            <div class="chart-card">
+
+                <div class="card-header">
+                    <h3>Achievement % by Category</h3>
+                </div>
+
+                <div class="chart-area">
+                    <canvas id="categoryPercentChart"></canvas>
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- SEASON -->
+
+        <section class="chart-card full-width">
+
+            <div class="card-header">
+                <h3>Season-wise Merchandise</h3>
+            </div>
+
+            <div class="chart-area large">
+                <canvas id="seasonChart"></canvas>
+            </div>
+
+        </section>
+
+
+        <!-- DETAILS -->
+
+        <section class="table-card">
+
+            <div class="card-header">
+                <h3>Target vs Achievement Details</h3>
+            </div>
+
+            <div class="table-container">
+
+                <table>
+
+                    <thead>
+
+                    <tr>
+
+                        <th>Category</th>
+
+                        <th>Retail Target</th>
+                        <th>Retail Ach</th>
+
+                        <th>Online Target</th>
+                        <th>Online Ach</th>
+
+                        <th>MBO Target</th>
+                        <th>MBO Ach</th>
+
+                        <th>KS Target</th>
+                        <th>KS Ach</th>
+
+                        <th>Total Target</th>
+                        <th>Total Ach</th>
+
+                        <th>Ach %</th>
+
+                    </tr>
+
+                    </thead>
+
+                    <tbody id="dataTable"></tbody>
+
+                </table>
+
+            </div>
+
+        </section>
+
+    </main>
+
+</div>
+
+
+<script src="script.js"></script>
+
+</body>
+</html>
