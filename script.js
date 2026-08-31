@@ -440,6 +440,47 @@ function renderMonth(sectionIndex) {
 
 
 // --------------------------------
+// CHART ERROR DISPLAY
+// If Chart.js isn't ready or a canvas can't be found, show a visible
+// message inside the card instead of leaving a silent blank box.
+// --------------------------------
+
+function showChartMessage(canvas, message) {
+
+    if (!canvas || !canvas.parentElement) {
+        return;
+    }
+
+    let note = canvas.parentElement.querySelector(".chart-note");
+
+    if (!note) {
+        note = document.createElement("div");
+        note.className = "chart-note";
+        note.style.cssText =
+            "position:absolute;inset:0;display:flex;align-items:center;" +
+            "justify-content:center;color:#9aa3b2;font-size:13px;text-align:center;padding:20px;";
+        canvas.parentElement.appendChild(note);
+    }
+
+    note.innerText = message;
+}
+
+
+function clearChartMessage(canvas) {
+
+    if (!canvas || !canvas.parentElement) {
+        return;
+    }
+
+    const note = canvas.parentElement.querySelector(".chart-note");
+
+    if (note) {
+        note.remove();
+    }
+}
+
+
+// --------------------------------
 // KPI CARDS
 // --------------------------------
 
@@ -486,13 +527,27 @@ function drawChannelChart(data) {
 
     const canvas = document.getElementById("channelChart");
 
-    if (!canvas || typeof Chart === "undefined") {
+    if (!canvas) {
+        console.warn("channelChart canvas not found");
         return;
     }
+
+    if (typeof Chart === "undefined") {
+        console.warn("Chart.js not loaded - channelChart skipped");
+        showChartMessage(canvas, "Chart library failed to load. Check your internet connection and refresh.");
+        return;
+    }
+
+    clearChartMessage(canvas);
 
     const labels = Object.keys(data.channels);
     const targets = labels.map(k => data.channels[k].target);
     const achievements = labels.map(k => data.channels[k].achievement);
+
+    if (targets.every(v => v === 0) && achievements.every(v => v === 0)) {
+        showChartMessage(canvas, "No channel data found for " + data.label + ".");
+        return;
+    }
 
     if (charts.channel) {
         charts.channel.destroy();
@@ -525,9 +580,18 @@ function drawChannelPercentChart(data) {
 
     const canvas = document.getElementById("channelPercentChart");
 
-    if (!canvas || typeof Chart === "undefined") {
+    if (!canvas) {
+        console.warn("channelPercentChart canvas not found");
         return;
     }
+
+    if (typeof Chart === "undefined") {
+        console.warn("Chart.js not loaded - channelPercentChart skipped");
+        showChartMessage(canvas, "Chart library failed to load. Check your internet connection and refresh.");
+        return;
+    }
+
+    clearChartMessage(canvas);
 
     const labels = Object.keys(data.channels);
 
@@ -574,13 +638,27 @@ function drawCategoryChart(data) {
 
     const canvas = document.getElementById("categoryChart");
 
-    if (!canvas || typeof Chart === "undefined") {
+    if (!canvas) {
+        console.warn("categoryChart canvas not found");
         return;
     }
+
+    if (typeof Chart === "undefined") {
+        console.warn("Chart.js not loaded - categoryChart skipped");
+        showChartMessage(canvas, "Chart library failed to load. Check your internet connection and refresh.");
+        return;
+    }
+
+    clearChartMessage(canvas);
 
     const labels = data.categories.map(c => c.category);
     const targets = data.categories.map(c => c.totalTarget);
     const achievements = data.categories.map(c => c.totalAch);
+
+    if (labels.length === 0) {
+        showChartMessage(canvas, "No category data found for " + data.label + ".");
+        return;
+    }
 
     if (charts.category) {
         charts.category.destroy();
@@ -614,12 +692,26 @@ function drawCategoryPercentChart(data) {
 
     const canvas = document.getElementById("categoryPercentChart");
 
-    if (!canvas || typeof Chart === "undefined") {
+    if (!canvas) {
+        console.warn("categoryPercentChart canvas not found");
         return;
     }
 
+    if (typeof Chart === "undefined") {
+        console.warn("Chart.js not loaded - categoryPercentChart skipped");
+        showChartMessage(canvas, "Chart library failed to load. Check your internet connection and refresh.");
+        return;
+    }
+
+    clearChartMessage(canvas);
+
     const labels = data.categories.map(c => c.category);
     const percentages = data.categories.map(c => c.percentage);
+
+    if (labels.length === 0) {
+        showChartMessage(canvas, "No category data found for " + data.label + ".");
+        return;
+    }
 
     if (charts.categoryPercent) {
         charts.categoryPercent.destroy();
@@ -756,9 +848,18 @@ function drawSeasonChart(seasonInfo) {
 
     const canvas = document.getElementById("seasonChart");
 
-    if (!canvas || typeof Chart === "undefined") {
+    if (!canvas) {
+        console.warn("seasonChart canvas not found");
         return;
     }
+
+    if (typeof Chart === "undefined") {
+        console.warn("Chart.js not loaded - seasonChart skipped");
+        showChartMessage(canvas, "Chart library failed to load. Check your internet connection and refresh.");
+        return;
+    }
+
+    clearChartMessage(canvas);
 
     const labels = seasonInfo.seasons.map(s => s.season);
     const values = seasonInfo.seasons.map(s => s.qty);
@@ -853,6 +954,6 @@ function fillTable(data) {
 // START
 // --------------------------------
 
-document.addEventListener("DOMContentLoaded", function () {
+window.addEventListener("load", function () {
     loadData();
 });
