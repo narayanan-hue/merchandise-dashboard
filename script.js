@@ -1,63 +1,97 @@
+// ===============================
+// MERCHANDISE DASHBOARD
+// Google Sheet -> GitHub Pages
+// ===============================
+
 const GOOGLE_SHEET_URL =
 "https://docs.google.com/spreadsheets/d/e/2PACX-1vTrmOpV4PlcDsXezdeF4NLCcbbXmxxYOWJukzdTKdV5nVf-WQgoMHHFrSAcU0WsOs1WLqyxEDYUiauo/pub?gid=1549389329&single=true&output=csv";
 
-let targetChart = null;
-let categoryChart = null;
+// Optional: publish the "Overall sheet" tab (season-wise opening stock) as
+// its own CSV and paste that URL here to make the Season-wise chart live.
+// File > Share > Publish to web > pick the "Overall sheet" tab > CSV.
+// Leave blank to fall back to the last known Aug'26 snapshot below.
+const SEASON_SHEET_URL = "";
 
+// Fallback season-wise stock snapshot (Aug'26, Grand Total across
+// Retail + Online + FG) — used only if SEASON_SHEET_URL is not set.
+const SEASON_FALLBACK = {
+    label: "Aug '26 (23-08-2026)",
+    seasons: [
+        { season: "Upto 24",      qty: 20520 },
+        { season: "Summer 25",    qty: 21425 },
+        { season: "Hi Summer 25", qty: 8738 },
+        { season: "Diwali 25",    qty: 11037 },
+        { season: "Epilogue 25",  qty: 9872 },
+        { season: "Summer 26",    qty: 111933 },
+        { season: "Hi Summer 26", qty: 45802 },
+        { season: "Diwali 26",    qty: 3113 }
+    ]
+};
 
-// =====================================================
-// LOAD AUGUST DATA FROM GOOGLE SHEET
-// =====================================================
+let allRows = [];
+let monthSections = [];
+let charts = {};
+
+// --------------------------------
+// LOAD GOOGLE SHEET
+// --------------------------------
 
 async function loadData() {
 
     try {
 
-        const response = await fetch(
-            GOOGLE_SHEET_URL + "&cache=" + Date.now()
-        );
+        const response = await fetch(GOOGLE_SHEET_URL + "&t=" + Date.now());
 
         if (!response.ok) {
-            throw new Error("Google Sheet not loading");
+            throw new Error("Google Sheet could not be loaded");
         }
 
-        const csv = await response.text();
+        const csvText = await response.text();
 
-        const rows = parseCSV(csv);
+        allRows = parseCSV(csvText);
 
-        console.log("AUGUST DATA:", rows);
+        monthSections = findMonthSections(allRows);
 
-        processAugustData(rows);
-
-        const update =
-            document.getElementById("lastUpdated");
-
-        if (update) {
-            update.innerText =
-                "Updated: " +
-                new Date().toLocaleString();
+        if (monthSections.length === 0) {
+            throw new Error("No monthly Target vs Achievement sections found");
         }
 
-    }
+        populateMonthFilter(monthSections);
 
-    catch (error) {
+        const defaultIndex = pickDefaultSection(monthSections);
 
-        console.error(error);
+        renderMonth(defaultIndex);
 
-        const update =
-            document.getElementById("lastUpdated");
+        loadSeasonData();
 
-        if (update) {
-            update.innerText =
-                "Data loading error";
+        setLastUpdated();
+
+    } catch (error) {
+
+        console.error("DATA LOAD ERROR:", error);
+
+        const el = document.getElementById("lastUpdated");
+
+        if (el) {
+            el.innerText = "Unable to load data";
         }
     }
 }
 
 
-// =====================================================
+function setLastUpdated() {
+
+    const el = document.getElementById("lastUpdated");
+
+    if (el) {
+        el.innerText = new Date().toLocaleString("en-IN");
+    }
+}
+
+
+// --------------------------------
 // CSV PARSER
-// =====================================================
+// --------------------------------
 
 function parseCSV(text) {
 
@@ -65,753 +99,760 @@ function parseCSV(text) {
 
     let row = [];
     let value = "";
-    let quote = false;
+    let insideQuotes = false;
 
     for (let i = 0; i < text.length; i++) {
 
-        const c = text[i];
+        const char = text[i];
+        const next = text[i + 1];
 
-        if (c === '"') {
+        if (char === '"' && insideQuotes && next === '"') {
 
-            if (
-                quote &&
-                text[i + 1] === '"'
-            ) {
+            value += '"';
+            i++;
 
-                value += '"';
-                i++;
+        } else if (char === '"') {
 
-            } else {
+            insideQuotes = !insideQuotes;
 
-                quote = !quote;
-            }
-
-        }
-
-        else if (
-            c === "," &&
-            !quote
-        ) {
+        } else if (char === "," && !insideQuotes) {
 
             row.push(value.trim());
             value = "";
 
-        }
+        } else if ((char === "\n" || char === "\r") && !insideQuotes) {
 
-        else if (
-            (c === "\n" || c === "\r") &&
-            !quote
-        ) {
-
-            if (
-                value !== "" ||
-                row.length > 0
-            ) {
+            if (value !== "" || row.length > 0) {
 
                 row.push(value.trim());
-
                 rows.push(row);
 
                 row = [];
                 value = "";
             }
 
-        }
+        } else {
 
-        else {
-
-            value += c;
+            value += char;
         }
     }
 
-
-    if (
-        value !== "" ||
-        row.length > 0
-    ) {
-
+    if (value !== "" || row.length > 0) {
         row.push(value.trim());
-
         rows.push(row);
     }
-
 
     return rows;
 }
 
 
-// =====================================================
-// NUMBER
-// =====================================================
+// --------------------------------
+// NUMBER CONVERTER
+// --------------------------------
 
 function number(value) {
 
-    if (
-        value === null ||
-        value === undefined ||
-        value === ""
-    ) {
+    if (value === undefined || value === null || value === "") {
         return 0;
     }
 
-    return Number(
-        String(value)
-            .replace(/₹/g, "")
-            .replace(/,/g, "")
-            .replace(/%/g, "")
-            .trim()
-    ) || 0;
+    const cleaned = String(value)
+        .replace(/₹/g, "")
+        .replace(/,/g, "")
+        .replace(/%/g, "")
+        .trim();
+
+    const result = parseFloat(cleaned);
+
+    return isNaN(result) ? 0 : result;
 }
 
 
-// =====================================================
-// MONEY
-// =====================================================
+// --------------------------------
+// FIND EVERY MONTH SECTION
+// A section starts on a row whose 2nd cell (index 1) is "RETAIL" -
+// that same row's 1st cell (index 0) holds the section's date label.
+// --------------------------------
 
-function money(value) {
+function findMonthSections(rows) {
 
-    return "₹" +
-        Number(value).toLocaleString(
-            "en-IN",
-            {
-                maximumFractionDigits: 0
-            }
-        );
+    const sections = [];
+
+    for (let i = 0; i < rows.length; i++) {
+
+        const marker = String(rows[i][1] || "").trim().toUpperCase();
+
+        if (marker !== "RETAIL") {
+            continue;
+        }
+
+        const rawLabel = String(rows[i][0] || "").trim();
+
+        const parsedDate = parseLabelDate(rawLabel);
+
+        sections.push({
+            startRow: i,
+            rawLabel: rawLabel,
+            date: parsedDate,
+            label: parsedDate ? formatMonthLabel(parsedDate) : (rawLabel || `Section ${i + 1}`)
+        });
+    }
+
+    return sections;
 }
 
 
-// =====================================================
-// SET HTML VALUE
-// =====================================================
+function parseLabelDate(rawLabel) {
 
-function setValue(id, value) {
+    if (!rawLabel) {
+        return null;
+    }
 
-    const element =
-        document.getElementById(id);
+    const attempt = new Date(rawLabel);
+
+    if (!isNaN(attempt.getTime()) && attempt.getFullYear() > 2000) {
+        return attempt;
+    }
+
+    return null;
+}
+
+
+function formatMonthLabel(date) {
+
+    return date.toLocaleDateString("en-IN", {
+        month: "short",
+        year: "numeric"
+    });
+}
+
+
+function pickDefaultSection(sections) {
+
+    // Prefer a section that falls in August (any year); otherwise the
+    // most recent (last) section in the sheet.
+    for (let i = sections.length - 1; i >= 0; i--) {
+
+        if (sections[i].date && sections[i].date.getMonth() === 7) {
+            return i;
+        }
+    }
+
+    return sections.length - 1;
+}
+
+
+// --------------------------------
+// MONTH FILTER DROPDOWN
+// --------------------------------
+
+function populateMonthFilter(sections) {
+
+    const select = document.getElementById("monthFilter");
+
+    if (!select) {
+        return;
+    }
+
+    select.innerHTML = "";
+
+    sections.forEach((section, index) => {
+
+        const option = document.createElement("option");
+
+        option.value = String(index);
+        option.textContent = section.label;
+
+        select.appendChild(option);
+    });
+
+    select.value = String(pickDefaultSection(sections));
+
+    select.addEventListener("change", function () {
+        renderMonth(parseInt(select.value, 10));
+    });
+}
+
+
+// --------------------------------
+// BUILD COLUMN MAP FOR A SECTION
+// Reads the segment-header row (RETAIL / ONLINE / MBO / KS / TOTAL) and
+// the sub-header row (Tar / Ach / Ach %) directly beneath it, so the
+// mapping self-adjusts even when a section has an extra "Ach %" column.
+// --------------------------------
+
+function buildColumnMap(rows, startRow) {
+
+    const segmentRow = rows[startRow];
+    const subRow = rows[startRow + 1] || [];
+
+    const map = {};
+
+    let currentSegment = null;
+
+    for (let col = 1; col < subRow.length; col++) {
+
+        const segmentLabel = String(segmentRow[col] || "").trim().toUpperCase();
+
+        if (segmentLabel !== "") {
+            currentSegment = segmentLabel;
+        }
+
+        if (!currentSegment) {
+            continue;
+        }
+
+        const subLabel = String(subRow[col] || "").trim().toLowerCase();
+
+        if (!map[currentSegment]) {
+            map[currentSegment] = {};
+        }
+
+        if (subLabel.startsWith("tar")) {
+            map[currentSegment].tar = col;
+        } else if (subLabel.startsWith("ach") && !subLabel.includes("%")) {
+            map[currentSegment].ach = col;
+        }
+    }
+
+    return map;
+}
+
+
+// --------------------------------
+// RENDER A SPECIFIC MONTH SECTION
+// --------------------------------
+
+function renderMonth(sectionIndex) {
+
+    const section = monthSections[sectionIndex];
+
+    if (!section) {
+        return;
+    }
+
+    const headerRow = section.startRow + 1;
+
+    const columnMap = buildColumnMap(allRows, section.startRow);
+
+    let totalRow = -1;
+
+    for (let i = headerRow + 1; i < Math.min(allRows.length, headerRow + 40); i++) {
+
+        if (String(allRows[i][0] || "").trim().toUpperCase() === "TOTAL") {
+            totalRow = i;
+            break;
+        }
+    }
+
+    if (totalRow === -1) {
+        console.error("TOTAL row not found for section:", section.label);
+        return;
+    }
+
+    const totalCols = columnMap.TOTAL || {};
+    const retailCols = columnMap.RETAIL || {};
+    const onlineCols = columnMap.ONLINE || {};
+    const mboCols = columnMap.MBO || {};
+    const ksCols = columnMap.KS || {};
+
+    const totalTarget = number(allRows[totalRow][totalCols.tar]);
+    const totalAchievement = number(allRows[totalRow][totalCols.ach]);
+
+    const achievementPercent = totalTarget !== 0
+        ? (totalAchievement / totalTarget) * 100
+        : 0;
+
+    const variance = totalAchievement - totalTarget;
+
+    const channels = {
+        Retail: {
+            target: number(allRows[totalRow][retailCols.tar]),
+            achievement: number(allRows[totalRow][retailCols.ach])
+        },
+        Online: {
+            target: number(allRows[totalRow][onlineCols.tar]),
+            achievement: number(allRows[totalRow][onlineCols.ach])
+        },
+        MBO: {
+            target: number(allRows[totalRow][mboCols.tar]),
+            achievement: number(allRows[totalRow][mboCols.ach])
+        },
+        KS: {
+            target: number(allRows[totalRow][ksCols.tar]),
+            achievement: number(allRows[totalRow][ksCols.ach])
+        }
+    };
+
+    const categories = [];
+
+    for (let i = headerRow + 1; i < totalRow; i++) {
+
+        const category = String(allRows[i][0] || "").trim();
+
+        if (category === "" || category.toUpperCase() === "TOTAL") {
+            continue;
+        }
+
+        const rTarget = number(allRows[i][retailCols.tar]);
+        const rAch = number(allRows[i][retailCols.ach]);
+        const oTarget = number(allRows[i][onlineCols.tar]);
+        const oAch = number(allRows[i][onlineCols.ach]);
+        const mTarget = number(allRows[i][mboCols.tar]);
+        const mAch = number(allRows[i][mboCols.ach]);
+        const kTarget = number(allRows[i][ksCols.tar]);
+        const kAch = number(allRows[i][ksCols.ach]);
+        const tTarget = number(allRows[i][totalCols.tar]);
+        const tAch = number(allRows[i][totalCols.ach]);
+
+        if (tTarget === 0 && tAch === 0) {
+            continue;
+        }
+
+        categories.push({
+            category,
+            retailTarget: rTarget, retailAch: rAch,
+            onlineTarget: oTarget, onlineAch: oAch,
+            mboTarget: mTarget, mboAch: mAch,
+            ksTarget: kTarget, ksAch: kAch,
+            totalTarget: tTarget, totalAch: tAch,
+            percentage: tTarget === 0 ? 0 : (tAch / tTarget) * 100
+        });
+    }
+
+    window.dashboardData = {
+        label: section.label,
+        totalTarget,
+        totalAchievement,
+        achievementPercent,
+        variance,
+        channels,
+        categories
+    };
+
+    updateKPIs(window.dashboardData);
+    drawChannelChart(window.dashboardData);
+    drawChannelPercentChart(window.dashboardData);
+    drawCategoryChart(window.dashboardData);
+    drawCategoryPercentChart(window.dashboardData);
+    fillTable(window.dashboardData);
+}
+
+
+// --------------------------------
+// KPI CARDS
+// --------------------------------
+
+function updateKPIs(data) {
+
+    setText("totalTarget", formatNumber(data.totalTarget));
+    setText("totalAchievement", formatNumber(data.totalAchievement));
+    setText("achievementPercent", data.achievementPercent.toFixed(1) + "%");
+    setText("variance", (data.variance >= 0 ? "+" : "") + formatNumber(data.variance));
+}
+
+
+function setText(id, value) {
+
+    const element = document.getElementById(id);
 
     if (element) {
-
         element.innerText = value;
     }
 }
 
 
-// =====================================================
-// PROCESS AUGUST DATA
-// =====================================================
+function formatNumber(value) {
 
-function processAugustData(rows) {
+    return "₹" + Number(value).toLocaleString("en-IN", {
+        maximumFractionDigits: 0
+    });
+}
 
-    if (!rows || rows.length < 2) {
 
-        console.error(
-            "No August data found"
-        );
+function percentColor(pct) {
 
+    if (pct >= 100) return "#1a9e5c";
+    if (pct >= 80) return "#f5a623";
+    return "#e0453c";
+}
+
+
+// --------------------------------
+// TARGET VS ACHIEVEMENT BY CHANNEL
+// --------------------------------
+
+function drawChannelChart(data) {
+
+    const canvas = document.getElementById("channelChart");
+
+    if (!canvas || typeof Chart === "undefined") {
         return;
     }
 
+    const labels = Object.keys(data.channels);
+    const targets = labels.map(k => data.channels[k].target);
+    const achievements = labels.map(k => data.channels[k].achievement);
 
-    // -------------------------------------------------
-    // FIND HEADER
-    // -------------------------------------------------
+    if (charts.channel) {
+        charts.channel.destroy();
+    }
 
-    let headerIndex = -1;
+    charts.channel = new Chart(canvas, {
+        type: "bar",
+        data: {
+            labels,
+            datasets: [
+                { label: "Target", data: targets, backgroundColor: "#a9c2e8" },
+                { label: "Achievement", data: achievements, backgroundColor: "#1769d1" }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: "top" } },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+}
 
 
+// --------------------------------
+// ACHIEVEMENT % BY CHANNEL
+// --------------------------------
+
+function drawChannelPercentChart(data) {
+
+    const canvas = document.getElementById("channelPercentChart");
+
+    if (!canvas || typeof Chart === "undefined") {
+        return;
+    }
+
+    const labels = Object.keys(data.channels);
+
+    const percentages = labels.map(k => {
+        const c = data.channels[k];
+        return c.target === 0 ? 0 : (c.achievement / c.target) * 100;
+    });
+
+    if (charts.channelPercent) {
+        charts.channelPercent.destroy();
+    }
+
+    charts.channelPercent = new Chart(canvas, {
+        type: "bar",
+        data: {
+            labels,
+            datasets: [{
+                label: "Achievement %",
+                data: percentages,
+                backgroundColor: percentages.map(percentColor)
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    suggestedMax: 120,
+                    ticks: { callback: v => v + "%" }
+                }
+            }
+        }
+    });
+}
+
+
+// --------------------------------
+// TARGET VS ACHIEVEMENT BY CATEGORY
+// --------------------------------
+
+function drawCategoryChart(data) {
+
+    const canvas = document.getElementById("categoryChart");
+
+    if (!canvas || typeof Chart === "undefined") {
+        return;
+    }
+
+    const labels = data.categories.map(c => c.category);
+    const targets = data.categories.map(c => c.totalTarget);
+    const achievements = data.categories.map(c => c.totalAch);
+
+    if (charts.category) {
+        charts.category.destroy();
+    }
+
+    charts.category = new Chart(canvas, {
+        type: "bar",
+        data: {
+            labels,
+            datasets: [
+                { label: "Target", data: targets, backgroundColor: "#a9c2e8" },
+                { label: "Achievement", data: achievements, backgroundColor: "#1769d1" }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: "y",
+            plugins: { legend: { position: "top" } },
+            scales: { x: { beginAtZero: true } }
+        }
+    });
+}
+
+
+// --------------------------------
+// ACHIEVEMENT % BY CATEGORY
+// --------------------------------
+
+function drawCategoryPercentChart(data) {
+
+    const canvas = document.getElementById("categoryPercentChart");
+
+    if (!canvas || typeof Chart === "undefined") {
+        return;
+    }
+
+    const labels = data.categories.map(c => c.category);
+    const percentages = data.categories.map(c => c.percentage);
+
+    if (charts.categoryPercent) {
+        charts.categoryPercent.destroy();
+    }
+
+    charts.categoryPercent = new Chart(canvas, {
+        type: "bar",
+        data: {
+            labels,
+            datasets: [{
+                label: "Achievement %",
+                data: percentages,
+                backgroundColor: percentages.map(percentColor)
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: "y",
+            plugins: { legend: { display: false } },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: { callback: v => v + "%" }
+                }
+            }
+        }
+    });
+}
+
+
+// --------------------------------
+// SEASON-WISE MERCHANDISE
+// --------------------------------
+
+async function loadSeasonData() {
+
+    let seasonInfo = SEASON_FALLBACK;
+
+    if (SEASON_SHEET_URL) {
+
+        try {
+
+            const response = await fetch(SEASON_SHEET_URL + "&t=" + Date.now());
+
+            if (response.ok) {
+
+                const csvText = await response.text();
+                const rows = parseCSV(csvText);
+                const parsed = parseSeasonRows(rows);
+
+                if (parsed) {
+                    seasonInfo = parsed;
+                }
+            }
+
+        } catch (error) {
+            console.error("SEASON DATA LOAD ERROR:", error);
+        }
+    }
+
+    drawSeasonChart(seasonInfo);
+}
+
+
+function parseSeasonRows(rows) {
+
+    // Locate the "Grand Total" (Retail + Online + FG) block: the row
+    // whose cell reads "Grand Total" heading the season columns, and the
+    // TOTAL row beneath the category list.
     for (let i = 0; i < rows.length; i++) {
 
-        const first =
-            String(rows[i][0] || "")
-                .trim()
-                .toUpperCase();
+        const label = String(rows[i][0] || "").trim().toUpperCase();
 
-
-        if (
-            first === "CATEGORY"
-        ) {
-
-            headerIndex = i;
-
-            break;
+        if (!label.startsWith("CATEGORY")) {
+            continue;
         }
+
+        // Find "Grand Total" segment start in the row above.
+        const segmentRow = rows[i - 1] || [];
+
+        let grandTotalCol = -1;
+
+        for (let c = 0; c < segmentRow.length; c++) {
+            if (String(segmentRow[c] || "").trim().toUpperCase() === "GRAND TOTAL") {
+                grandTotalCol = c;
+                break;
+            }
+        }
+
+        if (grandTotalCol === -1) {
+            continue;
+        }
+
+        // Season names run along row i starting at grandTotalCol.
+        const seasonNames = [];
+
+        for (let c = grandTotalCol; c < rows[i].length; c++) {
+            const name = String(rows[i][c] || "").trim();
+            if (name === "" || name.toUpperCase() === "GRAND TOTAL") {
+                break;
+            }
+            seasonNames.push({ name, col: c });
+        }
+
+        // Find TOTAL row below.
+        let totalRow = -1;
+
+        for (let r = i + 1; r < Math.min(rows.length, i + 40); r++) {
+            if (String(rows[r][0] || "").trim().toUpperCase() === "TOTAL") {
+                totalRow = r;
+                break;
+            }
+        }
+
+        if (totalRow === -1 || seasonNames.length === 0) {
+            continue;
+        }
+
+        return {
+            label: String(rows[i - 1][0] || "Season-wise stock").trim(),
+            seasons: seasonNames.map(s => ({
+                season: s.name,
+                qty: number(rows[totalRow][s.col])
+            }))
+        };
     }
 
+    return null;
+}
 
-    if (headerIndex === -1) {
 
-        console.error(
-            "CATEGORY header not found"
-        );
+function drawSeasonChart(seasonInfo) {
 
+    const canvas = document.getElementById("seasonChart");
+
+    if (!canvas || typeof Chart === "undefined") {
         return;
     }
 
+    const labels = seasonInfo.seasons.map(s => s.season);
+    const values = seasonInfo.seasons.map(s => s.qty);
 
-    const header =
-        rows[headerIndex];
-
-
-    console.log(
-        "HEADER:",
-        header
-    );
-
-
-    // =================================================
-    // COLUMN POSITION
-    // =================================================
-
-    /*
-    
-    A = CATEGORY
-    B = Retail Target
-    C = Retail Achievement
-    D = Retail %
-    E = Online Target
-    F = Online Achievement
-    G = Online %
-    H = MBO Target
-    I = MBO Achievement
-    J = MBO %
-    K = KS Target
-    L = KS Achievement
-    M = KS %
-    N = TOTAL Target
-    O = TOTAL Achievement
-    P = Ach %
-    
-    */
-
-
-    // =================================================
-    // COMBINE REPEATED CATEGORIES
-    // =================================================
-
-    const categoryMap = {};
-
-
-    for (
-        let i = headerIndex + 1;
-        i < rows.length;
-        i++
-    ) {
-
-        const row = rows[i];
-
-
-        if (!row) continue;
-
-
-        let category =
-            String(row[0] || "")
-                .trim();
-
-
-        if (!category) continue;
-
-
-        // Remove TOTAL row
-        if (
-            category.toUpperCase() === "TOTAL"
-        ) {
-            continue;
-        }
-
-
-        // ---------------------------------------------
-        // NORMALISE CATEGORY
-        // ---------------------------------------------
-
-        category =
-            category
-                .replace(/\s+/g, " ")
-                .trim();
-
-
-        const key =
-            category.toUpperCase();
-
-
-        // ---------------------------------------------
-        // VALUES
-        // ---------------------------------------------
-
-        const target =
-            number(row[13]);
-
-
-        const achievement =
-            number(row[14]);
-
-
-        // ---------------------------------------------
-        // CREATE CATEGORY
-        // ---------------------------------------------
-
-        if (!categoryMap[key]) {
-
-            categoryMap[key] = {
-
-                category: category,
-
-                target: 0,
-
-                achievement: 0
-
-            };
-        }
-
-
-        // ---------------------------------------------
-        // ADD REPEATED CATEGORY
-        // ---------------------------------------------
-
-        categoryMap[key].target += target;
-
-        categoryMap[key].achievement +=
-            achievement;
+    if (charts.season) {
+        charts.season.destroy();
     }
 
-
-    // =================================================
-    // CONVERT MAP TO ARRAY
-    // =================================================
-
-    const categories =
-        Object.values(categoryMap);
-
-
-    // =================================================
-    // CALCULATE %
-    // =================================================
-
-    categories.forEach(item => {
-
-        item.percentage =
-            item.target === 0
-                ? 0
-                : (
-                    item.achievement /
-                    item.target
-                ) * 100;
-
+    charts.season = new Chart(canvas, {
+        type: "bar",
+        data: {
+            labels,
+            datasets: [{
+                label: "Stock Qty",
+                data: values,
+                backgroundColor: "#1769d1"
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } }
+        }
     });
-
-
-    console.log(
-        "COMBINED AUGUST CATEGORIES:",
-        categories
-    );
-
-
-    // =================================================
-    // TOTAL
-    // =================================================
-
-    let totalTarget = 0;
-
-    let totalAchievement = 0;
-
-
-    categories.forEach(item => {
-
-        totalTarget += item.target;
-
-        totalAchievement +=
-            item.achievement;
-
-    });
-
-
-    const achievementPercent =
-        totalTarget === 0
-            ? 0
-            : (
-                totalAchievement /
-                totalTarget
-            ) * 100;
-
-
-    const variance =
-        totalAchievement -
-        totalTarget;
-
-
-    // =================================================
-    // KPI CARDS
-    // =================================================
-
-    setValue(
-        "totalTarget",
-        money(totalTarget)
-    );
-
-
-    setValue(
-        "totalAchievement",
-        money(totalAchievement)
-    );
-
-
-    setValue(
-        "achievementPercent",
-        achievementPercent.toFixed(2) + "%"
-    );
-
-
-    setValue(
-        "variance",
-        money(variance)
-    );
-
-
-    // =================================================
-    // CHANNEL TOTALS
-    // =================================================
-
-    const channels = {
-
-        Retail: {
-            target: 0,
-            achievement: 0
-        },
-
-        Online: {
-            target: 0,
-            achievement: 0
-        },
-
-        MBO: {
-            target: 0,
-            achievement: 0
-        },
-
-        KS: {
-            target: 0,
-            achievement: 0
-        }
-
-    };
-
-
-    // Add all rows channel-wise
-
-    for (
-        let i = headerIndex + 1;
-        i < rows.length;
-        i++
-    ) {
-
-        const row = rows[i];
-
-        if (!row) continue;
-
-
-        const category =
-            String(row[0] || "")
-                .trim();
-
-
-        if (!category) continue;
-
-
-        if (
-            category.toUpperCase() === "TOTAL"
-        ) {
-            continue;
-        }
-
-
-        channels.Retail.target +=
-            number(row[1]);
-
-        channels.Retail.achievement +=
-            number(row[2]);
-
-
-        channels.Online.target +=
-            number(row[4]);
-
-        channels.Online.achievement +=
-            number(row[5]);
-
-
-        channels.MBO.target +=
-            number(row[7]);
-
-        channels.MBO.achievement +=
-            number(row[8]);
-
-
-        channels.KS.target +=
-            number(row[10]);
-
-        channels.KS.achievement +=
-            number(row[11]);
-    }
-
-
-    console.log(
-        "AUGUST CHANNELS:",
-        channels
-    );
-
-
-    // =================================================
-    // DRAW
-    // =================================================
-
-    drawTargetAchievement(channels);
-
-    drawCategoryChart(categories);
-
-    updateTable(categories);
 }
 
 
-// =====================================================
-// TARGET VS ACHIEVEMENT
-// =====================================================
+// --------------------------------
+// DETAILS TABLE
+// --------------------------------
 
-function drawTargetAchievement(channels) {
+function fillTable(data) {
 
-    const canvas =
-        document.getElementById(
-            "targetAchievementChart"
-        );
-
-
-    if (!canvas) return;
-
-
-    if (targetChart) {
-
-        targetChart.destroy();
-    }
-
-
-    const labels =
-        Object.keys(channels);
-
-
-    targetChart =
-        new Chart(canvas, {
-
-            type: "bar",
-
-            data: {
-
-                labels: labels,
-
-                datasets: [
-
-                    {
-
-                        label: "Target",
-
-                        data: labels.map(
-                            x =>
-                                channels[x].target
-                        )
-
-                    },
-
-                    {
-
-                        label: "Achievement",
-
-                        data: labels.map(
-                            x =>
-                                channels[x].achievement
-                        )
-
-                    }
-
-                ]
-
-            },
-
-            options: {
-
-                responsive: true,
-
-                maintainAspectRatio: false,
-
-                scales: {
-
-                    y: {
-
-                        beginAtZero: true
-
-                    }
-
-                }
-
-            }
-
-        });
-}
-
-
-// =====================================================
-// CATEGORY ACHIEVEMENT %
-// =====================================================
-
-function drawCategoryChart(categories) {
-
-    const canvas =
-        document.getElementById(
-            "categoryChart"
-        );
-
-
-    if (!canvas) return;
-
-
-    if (categoryChart) {
-
-        categoryChart.destroy();
-    }
-
-
-    categoryChart =
-        new Chart(canvas, {
-
-            type: "bar",
-
-            data: {
-
-                labels:
-                    categories.map(
-                        x => x.category
-                    ),
-
-                datasets: [
-
-                    {
-
-                        label:
-                            "Achievement %",
-
-                        data:
-                            categories.map(
-                                x => x.percentage
-                            )
-
-                    }
-
-                ]
-
-            },
-
-            options: {
-
-                responsive: true,
-
-                maintainAspectRatio: false,
-
-                indexAxis: "y",
-
-                scales: {
-
-                    x: {
-
-                        beginAtZero: true,
-
-                        max: 100,
-
-                        ticks: {
-
-                            callback:
-                                function(value) {
-
-                                    return value + "%";
-
-                                }
-
-                        }
-
-                    }
-
-                }
-
-            }
-
-        });
-}
-
-
-// =====================================================
-// TABLE
-// =====================================================
-
-function updateTable(categories) {
-
-    const tbody =
-        document.getElementById(
-            "categoryTableBody"
-        );
-
+    const tbody = document.getElementById("dataTable");
 
     if (!tbody) {
-
-        console.warn(
-            "categoryTableBody not found"
-        );
-
         return;
     }
-
 
     tbody.innerHTML = "";
 
+    const fmt = v => Number(v).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 
-    categories.forEach(item => {
+    data.categories.forEach(c => {
 
-        const row =
-            document.createElement("tr");
+        const tr = document.createElement("tr");
 
-
-        row.innerHTML = `
-
-            <td>
-                ${item.category}
-            </td>
-
-            <td>
-                ${money(item.target)}
-            </td>
-
-            <td>
-                ${money(item.achievement)}
-            </td>
-
-            <td>
-                ${item.percentage.toFixed(2)}%
-            </td>
-
+        tr.innerHTML = `
+            <td>${c.category}</td>
+            <td>${fmt(c.retailTarget)}</td>
+            <td>${fmt(c.retailAch)}</td>
+            <td>${fmt(c.onlineTarget)}</td>
+            <td>${fmt(c.onlineAch)}</td>
+            <td>${fmt(c.mboTarget)}</td>
+            <td>${fmt(c.mboAch)}</td>
+            <td>${fmt(c.ksTarget)}</td>
+            <td>${fmt(c.ksAch)}</td>
+            <td>${fmt(c.totalTarget)}</td>
+            <td>${fmt(c.totalAch)}</td>
+            <td style="color:${percentColor(c.percentage)};font-weight:bold">${c.percentage.toFixed(1)}%</td>
         `;
 
-
-        tbody.appendChild(row);
-
+        tbody.appendChild(tr);
     });
+
+    const totalTr = document.createElement("tr");
+
+    totalTr.style.fontWeight = "bold";
+    totalTr.style.borderTop = "2px solid #071d49";
+
+    totalTr.innerHTML = `
+        <td>TOTAL</td>
+        <td>${fmt(data.channels.Retail.target)}</td>
+        <td>${fmt(data.channels.Retail.achievement)}</td>
+        <td>${fmt(data.channels.Online.target)}</td>
+        <td>${fmt(data.channels.Online.achievement)}</td>
+        <td>${fmt(data.channels.MBO.target)}</td>
+        <td>${fmt(data.channels.MBO.achievement)}</td>
+        <td>${fmt(data.channels.KS.target)}</td>
+        <td>${fmt(data.channels.KS.achievement)}</td>
+        <td>${fmt(data.totalTarget)}</td>
+        <td>${fmt(data.totalAchievement)}</td>
+        <td style="color:${percentColor(data.achievementPercent)}">${data.achievementPercent.toFixed(1)}%</td>
+    `;
+
+    tbody.appendChild(totalTr);
 }
 
 
-// =====================================================
+// --------------------------------
 // START
-// =====================================================
+// --------------------------------
 
-loadData();
-
-
-// =====================================================
-// AUTO REFRESH EVERY 5 MINUTES
-// =====================================================
-
-setInterval(
-    loadData,
-    5 * 60 * 1000
-);
+document.addEventListener("DOMContentLoaded", function () {
+    loadData();
+});
