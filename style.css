@@ -409,6 +409,37 @@ tbody tr:hover {
 
 
 /* =========================
+   CHANNEL SLICER
+   Hides the Details table columns that don't belong to whichever
+   channel is picked in #channelFilter. "All" shows every column.
+========================= */
+
+table.channel-retail .col-online,
+table.channel-retail .col-mbo,
+table.channel-retail .col-ks {
+    display: none;
+}
+
+table.channel-online .col-retail,
+table.channel-online .col-mbo,
+table.channel-online .col-ks {
+    display: none;
+}
+
+table.channel-mbo .col-retail,
+table.channel-mbo .col-online,
+table.channel-mbo .col-ks {
+    display: none;
+}
+
+table.channel-ks .col-retail,
+table.channel-ks .col-online,
+table.channel-ks .col-mbo {
+    display: none;
+}
+
+
+/* =========================
    MOBILE
 ========================= */
 
