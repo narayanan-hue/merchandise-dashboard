@@ -208,10 +208,43 @@ function parseLabelDate(rawLabel) {
         return null;
     }
 
+    // Handles the sheet's short "Mon-YY" labels (e.g. "Aug-26", "Dec-25"),
+    // where native Date parsing misreads the 2-digit year (e.g. as 2001).
+    const shortMatch = rawLabel.match(/^([A-Za-z]{3,9})[\s-](\d{2,4})$/);
+
+    if (shortMatch) {
+
+        const monthNames = ["jan", "feb", "mar", "apr", "may", "jun",
+                             "jul", "aug", "sep", "oct", "nov", "dec"];
+
+        const monthIndex = monthNames.indexOf(shortMatch[1].slice(0, 3).toLowerCase());
+
+        if (monthIndex !== -1) {
+
+            let year = parseInt(shortMatch[2], 10);
+
+            if (year < 100) {
+                year += 2000;
+            }
+
+            return new Date(year, monthIndex, 1);
+        }
+    }
+
     const attempt = new Date(rawLabel);
 
-    if (!isNaN(attempt.getTime()) && attempt.getFullYear() > 2000) {
-        return attempt;
+    if (!isNaN(attempt.getTime())) {
+
+        let year = attempt.getFullYear();
+
+        // Guard against the same 2-digit-year misparse on other formats.
+        if (year < 100) {
+            attempt.setFullYear(year + 2000);
+        }
+
+        if (attempt.getFullYear() > 2000) {
+            return attempt;
+        }
     }
 
     return null;
