@@ -62,7 +62,7 @@
 
             <div>
                 <h1>Merchandise Dashboard</h1>
-                <p>Target vs Achievement Analysis</p>
+                <p>Target vs Achievement Analysis<span id="channelLabel"></span></p>
             </div>
 
             <div class="filters">
@@ -228,7 +228,7 @@
 
             <div class="table-container">
 
-                <table>
+                <table id="detailsTable">
 
                     <thead>
 
@@ -236,22 +236,22 @@
 
                         <th>Category</th>
 
-                        <th>Retail Target</th>
-                        <th>Retail Ach</th>
+                        <th class="col-retail">Retail Target</th>
+                        <th class="col-retail">Retail Ach</th>
 
-                        <th>Online Target</th>
-                        <th>Online Ach</th>
+                        <th class="col-online">Online Target</th>
+                        <th class="col-online">Online Ach</th>
 
-                        <th>MBO Target</th>
-                        <th>MBO Ach</th>
+                        <th class="col-mbo">MBO Target</th>
+                        <th class="col-mbo">MBO Ach</th>
 
-                        <th>KS Target</th>
-                        <th>KS Ach</th>
+                        <th class="col-ks">KS Target</th>
+                        <th class="col-ks">KS Ach</th>
 
-                        <th>Total Target</th>
-                        <th>Total Ach</th>
+                        <th class="col-total">Total Target</th>
+                        <th class="col-total">Total Ach</th>
 
-                        <th>Ach %</th>
+                        <th class="col-total">Ach %</th>
 
                     </tr>
 
@@ -270,7 +270,7 @@
 </div>
 
 
-<script src="script.js?v=4"></script>
+<script src="script.js?v=5"></script>
 
 </body>
 </html>
