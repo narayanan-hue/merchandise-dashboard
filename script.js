@@ -337,9 +337,26 @@ function setupChannelFilter() {
         currentChannel = select.value;
 
         if (window.dashboardData) {
-            updateCategorySection(window.dashboardData, currentChannel);
+            applyChannelFilter(window.dashboardData, currentChannel);
         }
     });
+}
+
+
+// --------------------------------
+// Runs every card through the currently selected channel. Called on
+// month change and on channel-slicer change.
+// --------------------------------
+
+function applyChannelFilter(data, channel) {
+
+    setText("channelLabel", channel === "All" ? "" : " — " + channel);
+
+    updateKPIs(data, channel);
+    drawChannelChart(data, channel);
+    drawChannelPercentChart(data, channel);
+    updateCategorySection(data, channel);
+    fillTable(data, channel);
 }
 
 
@@ -499,11 +516,7 @@ function renderMonth(sectionIndex) {
         categories
     };
 
-    updateKPIs(window.dashboardData);
-    drawChannelChart(window.dashboardData);
-    drawChannelPercentChart(window.dashboardData);
-    updateCategorySection(window.dashboardData, currentChannel);
-    fillTable(window.dashboardData);
+    applyChannelFilter(window.dashboardData, currentChannel);
 }
 
 
@@ -552,12 +565,25 @@ function clearChartMessage(canvas) {
 // KPI CARDS
 // --------------------------------
 
-function updateKPIs(data) {
+function updateKPIs(data, channel) {
 
-    setText("totalTarget", formatNumber(data.totalTarget));
-    setText("totalAchievement", formatNumber(data.totalAchievement));
-    setText("achievementPercent", data.achievementPercent.toFixed(1) + "%");
-    setText("variance", (data.variance >= 0 ? "+" : "") + formatNumber(data.variance));
+    if (!channel || channel === "All" || !data.channels[channel]) {
+
+        setText("totalTarget", formatNumber(data.totalTarget));
+        setText("totalAchievement", formatNumber(data.totalAchievement));
+        setText("achievementPercent", data.achievementPercent.toFixed(1) + "%");
+        setText("variance", (data.variance >= 0 ? "+" : "") + formatNumber(data.variance));
+        return;
+    }
+
+    const c = data.channels[channel];
+    const percent = c.target === 0 ? 0 : (c.achievement / c.target) * 100;
+    const variance = c.achievement - c.target;
+
+    setText("totalTarget", formatNumber(c.target));
+    setText("totalAchievement", formatNumber(c.achievement));
+    setText("achievementPercent", percent.toFixed(1) + "%");
+    setText("variance", (variance >= 0 ? "+" : "") + formatNumber(variance));
 }
 
 
@@ -591,7 +617,7 @@ function percentColor(pct) {
 // TARGET VS ACHIEVEMENT BY CHANNEL
 // --------------------------------
 
-function drawChannelChart(data) {
+function drawChannelChart(data, channel) {
 
     const canvas = document.getElementById("channelChart");
 
@@ -608,7 +634,11 @@ function drawChannelChart(data) {
 
     clearChartMessage(canvas);
 
-    const labels = Object.keys(data.channels);
+    const allLabels = Object.keys(data.channels);
+    const labels = (channel && channel !== "All" && data.channels[channel])
+        ? [channel]
+        : allLabels;
+
     const targets = labels.map(k => data.channels[k].target);
     const achievements = labels.map(k => data.channels[k].achievement);
 
@@ -644,7 +674,7 @@ function drawChannelChart(data) {
 // ACHIEVEMENT % BY CHANNEL
 // --------------------------------
 
-function drawChannelPercentChart(data) {
+function drawChannelPercentChart(data, channel) {
 
     const canvas = document.getElementById("channelPercentChart");
 
@@ -661,7 +691,10 @@ function drawChannelPercentChart(data) {
 
     clearChartMessage(canvas);
 
-    const labels = Object.keys(data.channels);
+    const allLabels = Object.keys(data.channels);
+    const labels = (channel && channel !== "All" && data.channels[channel])
+        ? [channel]
+        : allLabels;
 
     const percentages = labels.map(k => {
         const c = data.channels[k];
@@ -996,12 +1029,22 @@ function drawSeasonChart(seasonInfo) {
 // DETAILS TABLE
 // --------------------------------
 
-function fillTable(data) {
+function fillTable(data, channel) {
 
+    const table = document.getElementById("detailsTable");
     const tbody = document.getElementById("dataTable");
 
     if (!tbody) {
         return;
+    }
+
+    if (table) {
+
+        table.classList.remove("channel-retail", "channel-online", "channel-mbo", "channel-ks");
+
+        if (channel && channel !== "All") {
+            table.classList.add("channel-" + channel.toLowerCase());
+        }
     }
 
     tbody.innerHTML = "";
@@ -1014,17 +1057,17 @@ function fillTable(data) {
 
         tr.innerHTML = `
             <td>${c.category}</td>
-            <td>${fmt(c.retailTarget)}</td>
-            <td>${fmt(c.retailAch)}</td>
-            <td>${fmt(c.onlineTarget)}</td>
-            <td>${fmt(c.onlineAch)}</td>
-            <td>${fmt(c.mboTarget)}</td>
-            <td>${fmt(c.mboAch)}</td>
-            <td>${fmt(c.ksTarget)}</td>
-            <td>${fmt(c.ksAch)}</td>
-            <td>${fmt(c.totalTarget)}</td>
-            <td>${fmt(c.totalAch)}</td>
-            <td style="color:${percentColor(c.percentage)};font-weight:bold">${c.percentage.toFixed(1)}%</td>
+            <td class="col-retail">${fmt(c.retailTarget)}</td>
+            <td class="col-retail">${fmt(c.retailAch)}</td>
+            <td class="col-online">${fmt(c.onlineTarget)}</td>
+            <td class="col-online">${fmt(c.onlineAch)}</td>
+            <td class="col-mbo">${fmt(c.mboTarget)}</td>
+            <td class="col-mbo">${fmt(c.mboAch)}</td>
+            <td class="col-ks">${fmt(c.ksTarget)}</td>
+            <td class="col-ks">${fmt(c.ksAch)}</td>
+            <td class="col-total">${fmt(c.totalTarget)}</td>
+            <td class="col-total">${fmt(c.totalAch)}</td>
+            <td class="col-total" style="color:${percentColor(c.percentage)};font-weight:bold">${c.percentage.toFixed(1)}%</td>
         `;
 
         tbody.appendChild(tr);
@@ -1037,17 +1080,17 @@ function fillTable(data) {
 
     totalTr.innerHTML = `
         <td>TOTAL</td>
-        <td>${fmt(data.channels.Retail.target)}</td>
-        <td>${fmt(data.channels.Retail.achievement)}</td>
-        <td>${fmt(data.channels.Online.target)}</td>
-        <td>${fmt(data.channels.Online.achievement)}</td>
-        <td>${fmt(data.channels.MBO.target)}</td>
-        <td>${fmt(data.channels.MBO.achievement)}</td>
-        <td>${fmt(data.channels.KS.target)}</td>
-        <td>${fmt(data.channels.KS.achievement)}</td>
-        <td>${fmt(data.totalTarget)}</td>
-        <td>${fmt(data.totalAchievement)}</td>
-        <td style="color:${percentColor(data.achievementPercent)}">${data.achievementPercent.toFixed(1)}%</td>
+        <td class="col-retail">${fmt(data.channels.Retail.target)}</td>
+        <td class="col-retail">${fmt(data.channels.Retail.achievement)}</td>
+        <td class="col-online">${fmt(data.channels.Online.target)}</td>
+        <td class="col-online">${fmt(data.channels.Online.achievement)}</td>
+        <td class="col-mbo">${fmt(data.channels.MBO.target)}</td>
+        <td class="col-mbo">${fmt(data.channels.MBO.achievement)}</td>
+        <td class="col-ks">${fmt(data.channels.KS.target)}</td>
+        <td class="col-ks">${fmt(data.channels.KS.achievement)}</td>
+        <td class="col-total">${fmt(data.totalTarget)}</td>
+        <td class="col-total">${fmt(data.totalAchievement)}</td>
+        <td class="col-total" style="color:${percentColor(data.achievementPercent)}">${data.achievementPercent.toFixed(1)}%</td>
     `;
 
     tbody.appendChild(totalTr);
