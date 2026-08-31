@@ -28,9 +28,20 @@ const SEASON_FALLBACK = {
     ]
 };
 
+// Maps the channel-slicer value to the per-category field names that
+// already get built for every category in renderMonth().
+const CHANNEL_KEYS = {
+    All:    { target: "totalTarget",  ach: "totalAch" },
+    Retail: { target: "retailTarget", ach: "retailAch" },
+    Online: { target: "onlineTarget", ach: "onlineAch" },
+    MBO:    { target: "mboTarget",    ach: "mboAch" },
+    KS:     { target: "ksTarget",     ach: "ksAch" }
+};
+
 let allRows = [];
 let monthSections = [];
 let charts = {};
+let currentChannel = "All";
 
 // --------------------------------
 // LOAD GOOGLE SHEET
@@ -308,6 +319,31 @@ function populateMonthFilter(sections) {
 
 
 // --------------------------------
+// CHANNEL FILTER (SLICER)
+// Only affects the Category table + Achievement % by Category chart,
+// since every other card already breaks numbers out by channel.
+// --------------------------------
+
+function setupChannelFilter() {
+
+    const select = document.getElementById("channelFilter");
+
+    if (!select) {
+        return;
+    }
+
+    select.addEventListener("change", function () {
+
+        currentChannel = select.value;
+
+        if (window.dashboardData) {
+            updateCategorySection(window.dashboardData, currentChannel);
+        }
+    });
+}
+
+
+// --------------------------------
 // BUILD COLUMN MAP FOR A SECTION
 // Reads the segment-header row (RETAIL / ONLINE / MBO / KS / TOTAL) and
 // the sub-header row (Tar / Ach / Ach %) directly beneath it, so the
@@ -466,8 +502,7 @@ function renderMonth(sectionIndex) {
     updateKPIs(window.dashboardData);
     drawChannelChart(window.dashboardData);
     drawChannelPercentChart(window.dashboardData);
-    drawCategoryChart(window.dashboardData);
-    drawCategoryPercentChart(window.dashboardData);
+    updateCategorySection(window.dashboardData, currentChannel);
     fillTable(window.dashboardData);
 }
 
@@ -664,56 +699,92 @@ function drawChannelPercentChart(data) {
 
 
 // --------------------------------
-// TARGET VS ACHIEVEMENT BY CATEGORY
+// CATEGORY SECTION (table + % chart)
+// Driven by the channel slicer: recomputes target/achievement per
+// category using whichever channel's columns are selected.
 // --------------------------------
 
-function drawCategoryChart(data) {
+function updateCategorySection(data, channel) {
 
-    const canvas = document.getElementById("categoryChart");
+    const keys = CHANNEL_KEYS[channel] || CHANNEL_KEYS.All;
 
-    if (!canvas) {
-        console.warn("categoryChart canvas not found");
-        return;
-    }
+    const rows = data.categories.map(c => {
 
-    if (typeof Chart === "undefined") {
-        console.warn("Chart.js not loaded - categoryChart skipped");
-        showChartMessage(canvas, "Chart library failed to load. Check your internet connection and refresh.");
-        return;
-    }
+        const target = c[keys.target];
+        const ach = c[keys.ach];
 
-    clearChartMessage(canvas);
-
-    const labels = data.categories.map(c => c.category);
-    const targets = data.categories.map(c => c.totalTarget);
-    const achievements = data.categories.map(c => c.totalAch);
-
-    if (labels.length === 0) {
-        showChartMessage(canvas, "No category data found for " + data.label + ".");
-        return;
-    }
-
-    if (charts.category) {
-        charts.category.destroy();
-    }
-
-    charts.category = new Chart(canvas, {
-        type: "bar",
-        data: {
-            labels,
-            datasets: [
-                { label: "Target", data: targets, backgroundColor: "#a9c2e8" },
-                { label: "Achievement", data: achievements, backgroundColor: "#1769d1" }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            indexAxis: "y",
-            plugins: { legend: { position: "top" } },
-            scales: { x: { beginAtZero: true } }
-        }
+        return {
+            category: c.category,
+            target,
+            ach,
+            percentage: target === 0 ? 0 : (ach / target) * 100
+        };
     });
+
+    setText("categoryTableTitle", "Target vs Achievement by Category" +
+        (channel === "All" ? "" : " — " + channel));
+
+    fillCategoryTable(rows, data.label, channel);
+    drawCategoryPercentChart(rows, data.label, channel);
+}
+
+
+// --------------------------------
+// TARGET VS ACHIEVEMENT BY CATEGORY (TABLE)
+// --------------------------------
+
+function fillCategoryTable(rows, label, channel) {
+
+    const tbody = document.getElementById("categoryTable");
+
+    if (!tbody) {
+        return;
+    }
+
+    tbody.innerHTML = "";
+
+    const fmt = v => Number(v).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+
+    if (rows.length === 0) {
+
+        tbody.innerHTML =
+            `<tr><td colspan="4" style="text-align:center;color:#9aa3b2;">` +
+            `No category data found for ${label}.</td></tr>`;
+
+        return;
+    }
+
+    rows.forEach(r => {
+
+        const tr = document.createElement("tr");
+
+        tr.innerHTML = `
+            <td>${r.category}</td>
+            <td>${fmt(r.target)}</td>
+            <td>${fmt(r.ach)}</td>
+            <td style="color:${percentColor(r.percentage)};font-weight:bold">${r.percentage.toFixed(1)}%</td>
+        `;
+
+        tbody.appendChild(tr);
+    });
+
+    const totalTarget = rows.reduce((sum, r) => sum + r.target, 0);
+    const totalAch = rows.reduce((sum, r) => sum + r.ach, 0);
+    const totalPercent = totalTarget === 0 ? 0 : (totalAch / totalTarget) * 100;
+
+    const totalTr = document.createElement("tr");
+
+    totalTr.style.fontWeight = "bold";
+    totalTr.style.borderTop = "2px solid #071d49";
+
+    totalTr.innerHTML = `
+        <td>TOTAL (${channel})</td>
+        <td>${fmt(totalTarget)}</td>
+        <td>${fmt(totalAch)}</td>
+        <td style="color:${percentColor(totalPercent)}">${totalPercent.toFixed(1)}%</td>
+    `;
+
+    tbody.appendChild(totalTr);
 }
 
 
@@ -721,7 +792,7 @@ function drawCategoryChart(data) {
 // ACHIEVEMENT % BY CATEGORY
 // --------------------------------
 
-function drawCategoryPercentChart(data) {
+function drawCategoryPercentChart(rows, label, channel) {
 
     const canvas = document.getElementById("categoryPercentChart");
 
@@ -738,11 +809,11 @@ function drawCategoryPercentChart(data) {
 
     clearChartMessage(canvas);
 
-    const labels = data.categories.map(c => c.category);
-    const percentages = data.categories.map(c => c.percentage);
+    const labels = rows.map(r => r.category);
+    const percentages = rows.map(r => r.percentage);
 
     if (labels.length === 0) {
-        showChartMessage(canvas, "No category data found for " + data.label + ".");
+        showChartMessage(canvas, "No category data found for " + label + ".");
         return;
     }
 
@@ -755,7 +826,7 @@ function drawCategoryPercentChart(data) {
         data: {
             labels,
             datasets: [{
-                label: "Achievement %",
+                label: channel + " Achievement %",
                 data: percentages,
                 backgroundColor: percentages.map(percentColor)
             }]
@@ -988,5 +1059,6 @@ function fillTable(data) {
 // --------------------------------
 
 window.addEventListener("load", function () {
+    setupChannelFilter();
     loadData();
 });
