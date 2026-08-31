@@ -71,6 +71,14 @@
                     <option value="All">All Months</option>
                 </select>
 
+                <select id="channelFilter">
+                    <option value="All">All Channels</option>
+                    <option value="Retail">Retail</option>
+                    <option value="Online">Online</option>
+                    <option value="MBO">MBO</option>
+                    <option value="KS">KS</option>
+                </select>
+
             </div>
 
         </header>
@@ -150,14 +158,31 @@
 
         <section class="two-column">
 
-            <div class="chart-card">
+            <div class="table-card">
 
                 <div class="card-header">
-                    <h3>Target vs Achievement by Category</h3>
+                    <h3 id="categoryTableTitle">Target vs Achievement by Category</h3>
                 </div>
 
-                <div class="chart-area">
-                    <canvas id="categoryChart"></canvas>
+                <div class="table-container">
+
+                    <table>
+
+                        <thead>
+
+                        <tr>
+                            <th>Category</th>
+                            <th>Target</th>
+                            <th>Achievement</th>
+                            <th>Ach %</th>
+                        </tr>
+
+                        </thead>
+
+                        <tbody id="categoryTable"></tbody>
+
+                    </table>
+
                 </div>
 
             </div>
@@ -245,7 +270,7 @@
 </div>
 
 
-<script src="script.js?v=3"></script>
+<script src="script.js?v=4"></script>
 
 </body>
 </html>
